@@ -709,3 +709,131 @@ nav {
   }
 
 }
+
+/* ROLE SWITCH (Login) */
+
+.role-switch {
+  display: flex;
+  gap: 8px;
+}
+
+.role-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.role-btn span {
+  font-weight: bold;
+}
+
+.role-btn.active {
+  border-color: #4f46e5;
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+/* ADMIN FORMS & TABLES */
+
+.inline-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.inline-form input {
+  flex: 1;
+  min-width: 140px;
+  padding: 11px 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  outline: none;
+}
+
+.inline-form input:focus {
+  border-color: #4f46e5;
+}
+
+.inline-form .login-btn {
+  width: auto;
+  padding: 11px 20px;
+}
+
+.admin-table-head,
+.admin-table-row {
+  grid-template-columns: 1fr 1.5fr 1.5fr 1fr 0.8fr;
+}
+
+.remove-btn {
+  border: none;
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  justify-self: start;
+}
+
+.remove-btn:hover {
+  background: #fee2e2;
+}
+
+/* FACULTY: ATTENDANCE & RESULTS */
+
+.attendance-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-btn {
+  border: 1px solid #d1d5db;
+  background: white;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+.toggle-btn.present.active {
+  background: #ecfdf5;
+  border-color: #059669;
+  color: #059669;
+}
+
+.toggle-btn.absent.active {
+  background: #fef2f2;
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.marks-input {
+  width: 90px;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  outline: none;
+}
+
+.marks-input:focus {
+  border-color: #4f46e5;
+}
+
+.save-attendance-btn {
+  width: auto;
+  padding: 12px 24px;
+  margin-top: 20px;
+}
