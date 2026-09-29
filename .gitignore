@@ -1,23 +1,23 @@
 # Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
 .venv/
 venv/
 
-# Local configuration and databases
+# Environment files
 .env
-.env.*
-!**/.env.example
-*.db
-*.sqlite
-*.sqlite3
 
-# Node
+# Frontend
 node_modules/
 dist/
 
-# Editors
-.vscode/
-.idea/
-.npm-cache/
+# Local caches
 .pip-cache/
+.npm-cache/
+
+# Local database
+*.db

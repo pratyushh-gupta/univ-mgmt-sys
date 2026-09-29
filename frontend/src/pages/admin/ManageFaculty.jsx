@@ -1,4 +1,56 @@
 import { useState } from "react";
-import { apiRequest } from "../../api/client";
+import { createFaculty, deactivateFaculty } from "../../api/faculty";
 import useApiData from "../../hooks/useApiData";
-export default function ManageFaculty() { const {data:faculty,setData,loading,error,refresh}=useApiData("/faculty"); const [form,setForm]=useState({id:"",name:"",department:"",email:"",password:""}); const [message,setMessage]=useState(""); async function add(e){e.preventDefault();setMessage("");try{const f=await apiRequest("/faculty",{method:"POST",body:form});setData([...faculty,f]);setForm({id:"",name:"",department:"",email:"",password:""})}catch(err){setMessage(err.message)}}async function remove(id){try{await apiRequest(`/faculty/${encodeURIComponent(id)}`,{method:"DELETE"});refresh()}catch(err){setMessage(err.message)}}return <><section className="panel full"><div className="panel-title"><h2>Add New Faculty</h2></div><form className="inline-form" onSubmit={add}>{[["id","Faculty ID"],["name","Full Name"],["department","Department"],["email","Email"],["password","Initial Password"]].map(([key,label])=><input key={key} required placeholder={label} type={key==="password"?"password":"text"} minLength={key==="password"?8:undefined} value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})}/>)}<button className="login-btn" type="submit">Add Faculty</button></form></section><section className="panel full"><div className="panel-title"><h2>All Faculty</h2><span className="badge">{faculty.length} total</span></div>{(error||message)&&<p role="alert">{message||error}</p>}{loading&&<p>Loading faculty…</p>}<div className="table"><div className="table-head admin-table-head"><span>ID</span><span>Name</span><span>Department</span><span>Email</span><span/></div>{faculty.map(f=><div className="table-row admin-table-row" key={f.id}><span>{f.user_id}</span><strong>{f.name}</strong><span>{f.department}</span><span>{f.email}</span><button className="remove-btn" onClick={()=>remove(f.user_id)}>Remove</button></div>)}</div></section></>; }
+
+const blankForm = () => ({ id: "", employee_id: "", name: "", email: "", department_id: "", designation: "", password: "" });
+
+export default function ManageFaculty() {
+  const { data: faculty, setData, loading, error, refresh } = useApiData("/faculty");
+  const { data: departments, loading: departmentsLoading } = useApiData("/departments", { auth: false });
+  const [form, setForm] = useState(blankForm);
+  const [message, setMessage] = useState("");
+
+  async function add(event) {
+    event.preventDefault();
+    setMessage("");
+    try {
+      const person = await createFaculty({ ...form, department_id: Number(form.department_id) });
+      setData([...faculty, person]);
+      setForm(blankForm());
+    } catch (requestError) { setMessage(requestError.message); }
+  }
+
+  async function remove(id) {
+    try { await deactivateFaculty(id); refresh(); }
+    catch (requestError) { setMessage(requestError.message); }
+  }
+
+  return <>
+    <section className="panel full">
+      <div className="panel-title"><h2>Add Faculty Account</h2></div>
+      <form className="inline-form" onSubmit={add}>
+        <input required placeholder="Login ID" value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} />
+        <input required placeholder="Employee ID" value={form.employee_id} onChange={(e) => setForm({ ...form, employee_id: e.target.value })} />
+        <input required placeholder="Full Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <select required aria-label="Department" value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
+          <option value="">{departmentsLoading ? "Loading departments…" : "Select department"}</option>
+          {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+        </select>
+        <input placeholder="Designation" value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} />
+        <input required type="password" minLength={8} placeholder="Initial Password (8+ characters)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        <button className="login-btn" type="submit" disabled={!departments.length}>Add Faculty</button>
+      </form>
+    </section>
+    <section className="panel full">
+      <div className="panel-title"><h2>Faculty</h2><span className="badge">{faculty.length} active</span></div>
+      {(error || message) && <p role="alert">{message || error}</p>}{loading && <p>Loading faculty…</p>}
+      <div className="table"><div className="table-head admin-table-head"><span>Employee ID</span><span>Name</span><span>Department</span><span>Email</span><span /></div>
+        {faculty.map((person) => <div className="table-row admin-table-row" key={person.faculty_id}>
+          <span>{person.employee_id}</span><strong>{person.name}</strong><span>{person.department}</span><span>{person.email}</span>
+          <button className="remove-btn" onClick={() => remove(person.user_id)}>Deactivate</button>
+        </div>)}
+      </div>
+    </section>
+  </>;
+}

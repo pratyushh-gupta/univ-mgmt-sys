@@ -1,49 +1,48 @@
 import { useEffect, useState } from "react";
-import { apiRequest } from "../../api/client";
+import { getOfferingRoster } from "../../api/faculty";
+import { gradeResults } from "../../api/results";
 import useApiData from "../../hooks/useApiData";
 
 export default function EnterResults() {
   const { data: courses, loading, error } = useApiData("/faculty/courses");
-  const [selectedCode, setSelectedCode] = useState("");
-  const code = selectedCode || courses[0]?.code || "";
-  const [rosterState, setRosterState] = useState({ courseCode: null, status: "idle", rows: [], error: "" });
+  const [selectedOfferingId, setSelectedOfferingId] = useState("");
+  const offeringId = selectedOfferingId || courses[0]?.id || "";
+  const [rosterState, setRosterState] = useState({ offeringId: null, status: "idle", rows: [], error: "" });
   const [marks, setMarks] = useState({});
   const [message, setMessage] = useState("");
-  const rosterMatchesCourse = rosterState.courseCode === code;
-  const rosterReady = Boolean(code && rosterMatchesCourse && rosterState.status === "loaded");
-  const rosterLoading = Boolean(code && (!rosterMatchesCourse || rosterState.status === "loading"));
+  const rosterMatchesCourse = String(rosterState.offeringId) === String(offeringId);
+  const rosterReady = Boolean(offeringId && rosterMatchesCourse && rosterState.status === "loaded");
+  const rosterLoading = Boolean(offeringId && (!rosterMatchesCourse || rosterState.status === "loading"));
   const rosterError = rosterMatchesCourse && rosterState.status === "error" ? rosterState.error : "";
   const roster = rosterReady ? rosterState.rows : [];
 
   useEffect(() => {
-    if (!code) return undefined;
+    if (!offeringId) return undefined;
     const controller = new AbortController();
-    apiRequest(`/faculty/roster/${encodeURIComponent(code)}`, { signal: controller.signal })
+    getOfferingRoster(offeringId, { signal: controller.signal })
       .then((rows) => {
         if (controller.signal.aborted) return;
-        setRosterState({ courseCode: code, status: "loaded", rows, error: "" });
-        setMarks(Object.fromEntries(rows.map((student) => [student.id, ""])));
+        setRosterState({ offeringId, status: "loaded", rows, error: "" });
+        setMarks(Object.fromEntries(rows.map((student) => [student.student_id, ""])));
       })
       .catch((requestError) => {
         if (controller.signal.aborted) return;
-        setRosterState({ courseCode: code, status: "error", rows: [], error: requestError.message });
+        setRosterState({ offeringId, status: "error", rows: [], error: requestError.message });
       });
     return () => controller.abort();
-  }, [code]);
+  }, [offeringId]);
 
   async function save() {
     setMessage("");
     try {
-      await apiRequest("/results", {
-        method: "POST",
-        body: {
-          course_code: code,
-          results: roster
-            .filter((student) => marks[student.id] !== "")
-            .map((student) => ({ student_id: student.id, marks: Number(marks[student.id]) })),
-        },
+      await gradeResults({
+        course_offering_id: Number(offeringId),
+        assessment_name: "Final",
+        results: roster
+          .filter((student) => marks[student.student_id] !== "")
+          .map((student) => ({ student_id: student.student_id, marks: Number(marks[student.student_id]), max_marks: 100 })),
       });
-      setMessage("Results saved.");
+      setMessage("Results saved as draft. An administrator or faculty member can publish them when ready.");
     } catch (saveError) {
       setMessage(saveError.message);
     }
@@ -56,20 +55,20 @@ export default function EnterResults() {
       {rosterError && <p role="alert">{rosterError}</p>}
       <div className="inline-form">
         <select
-          value={code}
+          value={offeringId}
           onChange={(event) => {
-            setSelectedCode(event.target.value);
-            setRosterState({ courseCode: event.target.value, status: "loading", rows: [], error: "" });
+            setSelectedOfferingId(event.target.value);
+            setRosterState({ offeringId: event.target.value, status: "loading", rows: [], error: "" });
             setMessage("");
           }}
           aria-label="Course"
           disabled={loading || !courses.length}
         >
-          {courses.map((course) => <option key={course.code} value={course.code}>{course.code} — {course.name}</option>)}
+          {courses.map((course) => <option key={course.id} value={course.id}>{course.code} — {course.name} · {course.semester} · Section {course.section}</option>)}
         </select>
       </div>
       {loading && <p>Loading courses…</p>}
-      {rosterLoading && <p role="status">Loading students for {code}…</p>}
+      {rosterLoading && <p role="status">Loading students for {courses.find((course) => String(course.id) === String(offeringId))?.code || "selected offering"}…</p>}
       {message && <p role="status">{message}</p>}
       <div className="table">
         <div className="table-head result-head"><span>Student</span><span>ID</span><span>Marks (out of 100)</span></div>
@@ -79,13 +78,13 @@ export default function EnterResults() {
             <span>{student.id}</span>
             <input
               type="number" min="0" max="100" className="marks-input"
-              value={marks[student.id] ?? ""}
-              onChange={(event) => setMarks({ ...marks, [student.id]: event.target.value })}
+              value={marks[student.student_id] ?? ""}
+              onChange={(event) => setMarks({ ...marks, [student.student_id]: event.target.value })}
             />
           </div>
         ))}
       </div>
-      <button className="login-btn save-attendance-btn" disabled={!code || !rosterReady || !roster.length} onClick={save}>Save Results</button>
+      <button className="login-btn save-attendance-btn" disabled={!offeringId || !rosterReady || !roster.length} onClick={save}>Save Results</button>
     </section>
   );
 }

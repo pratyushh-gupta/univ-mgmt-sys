@@ -1,8 +1,10 @@
 # University Management System
 
-University Management System with a FastAPI/SQLAlchemy backend and React/Vite frontend. Phase 1 keeps SQLite for local development and organizes the current API and authentication layers. PostgreSQL, Alembic migrations, and the expanded academic data model are reserved for Phase 2.
+FastAPI + SQLAlchemy backend and React/Vite frontend for the university portal. The Phase 3 implementation uses relational PostgreSQL models and Alembic migrations. SQLite URLs remain available for isolated local use, but the workflow integration tests require PostgreSQL. The application does not create its production schema at startup.
 
-## Backend setup (Windows PowerShell)
+## Backend setup
+
+From PowerShell:
 
 ```powershell
 cd backend
@@ -10,12 +12,31 @@ py -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
+# Set DATABASE_URL and JWT_SECRET in backend/.env before starting.
+alembic upgrade head
 python run.py
 ```
 
-The backend listens on http://localhost:8000 and API docs are at http://localhost:8000/docs. SQLite is the default (`DATABASE_URL=sqlite:///./university.db`). Database tables are initialized on startup; demo accounts and sample data are seeded only when `ENVIRONMENT=development`. Production requires an explicit non-placeholder `JWT_SECRET` of at least 32 characters and does not seed demo data. Never commit `.env`.
+The `.env.example` uses a PostgreSQL URL with a replace-me password placeholder. Keep real local credentials and JWT secrets in the ignored `backend/.env`; never commit it. The expected local database is `university_management` on localhost. SQLite can be selected with `DATABASE_URL=sqlite:///./university.db`.
 
-## Frontend setup (Windows PowerShell)
+On development startup, the backend runs an idempotent sample-data seed after confirming a migration has been applied. Seed manually with `python -m app.seed` from `backend/`. Production startup never seeds demo accounts. Tables are created and changed only through migrations.
+
+The development seed includes demo accounts: admin `admin` / `admin123`; faculty `F001` / `faculty123` and `F002` / `faculty456`; students `2024CS1042` / `student123` and `2024EE1001` / `student456`. These weak demo credentials are only for an isolated development database. Never expose them or reuse them in a deployed environment.
+
+## Migration workflow
+
+Run commands from `backend/`:
+
+```powershell
+alembic upgrade head
+alembic current
+alembic history
+alembic downgrade -1
+```
+
+After changing models, create a reviewed migration with `alembic revision --autogenerate -m "describe the schema change"`, inspect the generated revision, then apply `alembic upgrade head`. Do not use `Base.metadata.create_all()` for production schema management.
+
+## Frontend setup
 
 ```powershell
 cd frontend
@@ -24,10 +45,32 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
-Vite starts at http://localhost:5173. Configure the backend URL with `VITE_API_URL` (default http://localhost:8000).
+Set `VITE_API_URL` in `frontend/.env` when the backend does not use `http://localhost:8000`.
 
-## Authentication
+## Architecture
 
-The frontend submits the account ID and password to `POST /auth/login`, stores the returned bearer token in browser local storage, and restores the user session from `GET /auth/me`. Backend dependencies enforce authentication and Admin, Faculty, and Student roles. Logout removes the saved token. Seeded development accounts are documented in [backend/README.md](backend/README.md).
+- `backend/app/core/`: settings, JWT security, authorization dependencies.
+- `backend/app/database/`: SQLAlchemy base, engine, and request-scoped sessions.
+- `backend/app/models/`: authentication identity, academic structure, teaching offerings, and learning records.
+- `backend/app/routers/`: authenticated API routes; domain checks are shared through services.
+- `backend/app/services/`: grading, audit, ownership checks, and serializers.
+- `backend/alembic/`: versioned schema migrations.
+- `frontend/src/api/`: shared authenticated API client; pages do not use `mockData.js` as a data source.
 
-Some dashboard content depends on services not represented by the current API (including timetables and phone numbers); these are labeled in the UI instead of supplied as fake records. PostgreSQL/Alembic and database expansion are later-phase work.
+Principal entities include User, Student, Faculty, Department, AcademicYear, Semester, AdmissionApplication, Course, CourseOffering, Enrollment, ClassSchedule, AttendanceSession/AttendanceRecord, Assignment/Submission, Exam/ExamSchedule, Result, Notice, Notification, and AuditLog. Phase 3 adds the admission review-to-student workflow, course offering lifecycle and capacity-aware enrollment, academic history, student/faculty schedules and rosters, and lifecycle notifications. Unsupported timetable, submission file storage, and grading summaries are not fabricated.
+
+The Phase 3 schema revision is `f54c14450324` (parent `80d2893ee48c`). Apply it with `alembic upgrade head` from `backend/`.
+
+## Checks
+
+```powershell
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest -q
+alembic upgrade head
+cd ..\frontend
+npm run lint
+npm run build
+```
+
+The integration suite uses the PostgreSQL database configured by `DATABASE_URL` and rolls its test data back. Do not point it at a shared or production database. Unimplemented workflows should show unavailable states instead of fabricated data.
