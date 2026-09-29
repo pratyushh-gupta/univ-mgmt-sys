@@ -9,6 +9,7 @@ export default function EnterResults() {
   const offeringId = selectedOfferingId || courses[0]?.id || "";
   const [rosterState, setRosterState] = useState({ offeringId: null, status: "idle", rows: [], error: "" });
   const [marks, setMarks] = useState({});
+  const [isFinal, setIsFinal] = useState(true);
   const [message, setMessage] = useState("");
   const rosterMatchesCourse = String(rosterState.offeringId) === String(offeringId);
   const rosterReady = Boolean(offeringId && rosterMatchesCourse && rosterState.status === "loaded");
@@ -40,7 +41,7 @@ export default function EnterResults() {
         assessment_name: "Final",
         results: roster
           .filter((student) => marks[student.student_id] !== "")
-          .map((student) => ({ student_id: student.student_id, marks: Number(marks[student.student_id]), max_marks: 100 })),
+          .map((student) => ({ student_id: student.student_id, marks: Number(marks[student.student_id]), max_marks: 100, is_final: isFinal })),
       });
       setMessage("Results saved as draft. An administrator or faculty member can publish them when ready.");
     } catch (saveError) {
@@ -67,6 +68,7 @@ export default function EnterResults() {
           {courses.map((course) => <option key={course.id} value={course.id}>{course.code} — {course.name} · {course.semester} · Section {course.section}</option>)}
         </select>
       </div>
+      <label><input type="checkbox" checked={isFinal} onChange={(event) => setIsFinal(event.target.checked)} /> This is the final course result used for GPA</label>
       {loading && <p>Loading courses…</p>}
       {rosterLoading && <p role="status">Loading students for {courses.find((course) => String(course.id) === String(offeringId))?.code || "selected offering"}…</p>}
       {message && <p role="status">{message}</p>}

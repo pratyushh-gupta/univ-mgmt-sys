@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..models import AuditLog, CourseOffering, Faculty, Student, User
+from ..core.config import settings
 
 GRADE_BOUNDARIES = (
     (Decimal("90"), "A+", Decimal("10")),
@@ -16,6 +17,7 @@ GRADE_BOUNDARIES = (
     (Decimal("40"), "D", Decimal("5")),
     (Decimal("0"), "F", Decimal("0")),
 )
+LOW_ATTENDANCE_THRESHOLD_PERCENT = settings.low_attendance_threshold_percent
 
 
 def grade_for(marks: Decimal, max_marks: Decimal) -> tuple[str, Decimal]:

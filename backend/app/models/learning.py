@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, JSON, Numeric, String, Text, Time, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from ..database.base import Base
 
@@ -14,6 +14,7 @@ class AttendanceSession(Base):
         UniqueConstraint("id", "course_offering_id", name="uq_attendance_sessions_id_offering"),
         UniqueConstraint("course_offering_id", "session_date", "start_time", name="uq_attendance_session_period"),
         CheckConstraint("end_time IS NULL OR start_time IS NULL OR end_time > start_time", name="ck_attendance_session_times"),
+        CheckConstraint("status IN ('draft', 'published', 'closed')", name="ck_attendance_session_status"),
         Index("ix_attendance_sessions_date", "session_date"),
     )
 
@@ -24,6 +25,7 @@ class AttendanceSession(Base):
     start_time: Mapped[time | None] = mapped_column(Time)
     end_time: Mapped[time | None] = mapped_column(Time)
     topic: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="published", server_default="published")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     records: Mapped[list["AttendanceRecord"]] = relationship(back_populates="session")
@@ -50,6 +52,7 @@ class AttendanceRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     session: Mapped[AttendanceSession] = relationship(back_populates="records", foreign_keys=[attendance_session_id, course_offering_id])
+    student: Mapped["Student"] = relationship()
 
 
 class Assignment(Base):
@@ -69,6 +72,7 @@ class Assignment(Base):
     description: Mapped[str | None] = mapped_column(Text)
     instructions: Mapped[str | None] = mapped_column(Text)
     due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     max_marks: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     attachment_url: Mapped[str | None] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
@@ -85,7 +89,7 @@ class Submission(Base):
         ForeignKeyConstraint(["assignment_id", "course_offering_id"], ["assignments.id", "assignments.course_offering_id"], ondelete="RESTRICT", name="fk_submissions_assignment_offering"),
         ForeignKeyConstraint(["student_id", "course_offering_id"], ["enrollments.student_id", "enrollments.course_offering_id"], ondelete="RESTRICT", name="fk_submissions_enrollment"),
         UniqueConstraint("assignment_id", "student_id", name="uq_submissions_assignment_student"),
-        CheckConstraint("status IN ('draft', 'submitted', 'graded', 'returned')", name="ck_submissions_status"),
+        CheckConstraint("status IN ('draft', 'submitted', 'late', 'graded', 'returned')", name="ck_submissions_status"),
         CheckConstraint("marks IS NULL OR marks >= 0", name="ck_submissions_marks_nonnegative"),
         Index("ix_submissions_student_status", "student_id", "status"),
     )
@@ -139,6 +143,7 @@ class ExamSchedule(Base):
         UniqueConstraint("exam_id", "course_offering_id", name="uq_exam_schedules_exam_offering"),
         CheckConstraint("end_time > start_time", name="ck_exam_schedules_times"),
         UniqueConstraint("id", "course_offering_id", name="uq_exam_schedules_id_offering"),
+        CheckConstraint("max_marks > 0", name="ck_exam_schedule_max_marks_positive"),
         Index("ix_exam_schedules_date", "exam_date"),
     )
 
@@ -150,6 +155,7 @@ class ExamSchedule(Base):
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
     room: Mapped[str | None] = mapped_column(String(80))
+    max_marks: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False, default=Decimal("100"), server_default="100")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     exam: Mapped[Exam] = relationship(foreign_keys=[exam_id])
@@ -178,12 +184,14 @@ class Result(Base):
     grade: Mapped[str | None] = mapped_column(String(4))
     grade_point: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
+    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     published_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     course_offering: Mapped["CourseOffering"] = relationship()
+    student: Mapped["Student"] = relationship(primaryjoin="Student.id == foreign(Result.student_id)", viewonly=True)
 
 
 class Notice(Base):

@@ -24,6 +24,7 @@ import ManageFaculty from "./pages/admin/ManageFaculty";
 import ManageCourses from "./pages/admin/ManageCourses";
 import Admissions from "./pages/admin/Admissions";
 import ManageEnrollments from "./pages/admin/ManageEnrollments";
+import AcademicOperations from "./pages/admin/AcademicOperations";
 
 import FacultyHome from "./pages/faculty/FacultyHome";
 import MyCourses from "./pages/faculty/MyCourses";
@@ -31,6 +32,7 @@ import MarkAttendance from "./pages/faculty/MarkAttendance";
 import EnterResults from "./pages/faculty/EnterResults";
 import Roster from "./pages/faculty/Roster";
 import AcademicWork from "./pages/faculty/AcademicWork";
+import FacultyTimetable from "./pages/student/Timetable";
 
 const studentMenu = [
   { to: "/student", label: "Dashboard", icon: "🏠", end: true },
@@ -52,6 +54,7 @@ const adminMenu = [
   { to: "/admin/students", label: "Students", icon: "🎒" },
   { to: "/admin/admissions", label: "Admissions", icon: "📨" },
   { to: "/admin/enrollments", label: "Enrollments", icon: "✅" },
+  { to: "/admin/academic-operations", label: "Academic Operations", icon: "📊" },
   { to: "/admin/faculty", label: "Faculty", icon: "🧑‍🏫" },
   { to: "/admin/courses", label: "Courses", icon: "📚" },
 ];
@@ -61,6 +64,7 @@ const facultyMenu = [
   { to: "/faculty/courses", label: "My Courses", icon: "📚" },
   { to: "/faculty/roster", label: "Class Rosters", icon: "👥" },
   { to: "/faculty/work", label: "Assignments & Exams", icon: "📋" },
+  { to: "/faculty/timetable", label: "Teaching Timetable", icon: "🗓️" },
   { to: "/faculty/attendance", label: "Mark Attendance", icon: "📊" },
   { to: "/faculty/results", label: "Enter Results", icon: "📝" },
 ];
@@ -108,6 +112,7 @@ function App() {
             <Route path="students" element={<ManageStudents />} />
             <Route path="admissions" element={<Admissions />} />
             <Route path="enrollments" element={<ManageEnrollments />} />
+            <Route path="academic-operations" element={<AcademicOperations />} />
             <Route path="faculty" element={<ManageFaculty />} />
             <Route path="courses" element={<ManageCourses />} />
           </Route>
@@ -125,6 +130,7 @@ function App() {
             <Route path="courses" element={<MyCourses />} />
             <Route path="roster" element={<Roster />} />
             <Route path="work" element={<AcademicWork />} />
+            <Route path="timetable" element={<FacultyTimetable />} />
             <Route path="attendance" element={<MarkAttendance />} />
             <Route path="results" element={<EnterResults />} />
           </Route>

@@ -124,6 +124,14 @@ class ClassScheduleCreate(BaseModel):
     room: str | None = Field(default=None, max_length=80)
 
 
+class ClassScheduleUpdate(BaseModel):
+    course_offering_id: int | None = None
+    day_of_week: int | None = Field(default=None, ge=1, le=7)
+    start_time: time | None = None
+    end_time: time | None = None
+    room: str | None = Field(default=None, max_length=80)
+
+
 class FacultyCreate(BaseModel):
     id: str = Field(min_length=1, max_length=50)
     name: str = Field(min_length=1, max_length=120)
@@ -194,13 +202,24 @@ class AttendanceSessionCreate(BaseModel):
     start_time: time | None = None
     end_time: time | None = None
     topic: str | None = None
+    status: str = "published"
     records: list[AttendanceRecordInput] = Field(default_factory=list)
+
+
+class AttendanceSessionUpdate(BaseModel):
+    session_date: date
+    start_time: time | None = None
+    end_time: time | None = None
+    topic: str | None = None
+    status: str = "published"
+    records: list[AttendanceRecordInput] = Field(min_length=1)
 
 
 class ResultItem(BaseModel):
     student_id: str
     marks: Decimal = Field(ge=0)
     max_marks: Decimal = Field(default=Decimal("100"), gt=0)
+    is_final: bool = False
 
 
 class ResultRequest(BaseModel):
@@ -220,8 +239,36 @@ class AssignmentCreate(BaseModel):
     attachment_url: str | None = Field(default=None, max_length=1000)
     status: str = "published"
 
+    @field_validator("due_date")
+    @classmethod
+    def assignment_due_date_has_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("Due date must include a timezone")
+        return value
+
+
+class AssignmentUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    instructions: str | None = None
+    due_date: datetime | None = None
+    max_marks: Decimal | None = Field(default=None, gt=0)
+    status: str | None = None
+
+    @field_validator("due_date")
+    @classmethod
+    def assignment_update_due_date_has_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("Due date must include a timezone")
+        return value
+
 
 class SubmissionCreate(BaseModel):
+    text_content: str | None = None
+    file_url: str | None = Field(default=None, max_length=1000)
+
+
+class SubmissionDraft(BaseModel):
     text_content: str | None = None
     file_url: str | None = Field(default=None, max_length=1000)
 
@@ -237,6 +284,12 @@ class ExamCreate(BaseModel):
     semester_id: int
     start_date: date
     end_date: date
+    course_offering_id: int | None = None
+    exam_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    room: str | None = Field(default=None, max_length=80)
+    max_marks: Decimal = Field(default=Decimal("100"), gt=0)
 
 
 class ExamScheduleCreate(BaseModel):
@@ -246,6 +299,19 @@ class ExamScheduleCreate(BaseModel):
     start_time: time
     end_time: time
     room: str | None = Field(default=None, max_length=80)
+    max_marks: Decimal = Field(default=Decimal("100"), gt=0)
+
+
+class ExamScheduleUpdate(BaseModel):
+    exam_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    room: str | None = Field(default=None, max_length=80)
+    max_marks: Decimal | None = Field(default=None, gt=0)
+
+
+class ExamUpdate(BaseModel):
+    status: str
 
 
 class NoticeCreate(BaseModel):
@@ -264,6 +330,7 @@ class GradeResultCreate(BaseModel):
     marks: Decimal = Field(ge=0)
     max_marks: Decimal = Field(gt=0)
     exam_schedule_id: int | None = None
+    is_final: bool = False
 
 
 class ResultPublish(BaseModel):
@@ -274,6 +341,7 @@ class GradeResultItem(BaseModel):
     student_id: int
     marks: Decimal = Field(ge=0)
     max_marks: Decimal = Field(gt=0)
+    is_final: bool = False
 
 
 class GradeResultBatch(BaseModel):

@@ -36,7 +36,8 @@ def list_notices(user: User | None = Depends(optional_user), db: Session = Depen
             profile = db.query(Faculty).filter_by(user_id=user.id).first()
             department_id = profile.department_id if profile else None
         query = query.filter(Notice.audience.in_(("all", user.role)))
-        query = query.filter((Notice.department_id.is_(None)) | (Notice.department_id == department_id))
+        if user.role != "admin":
+            query = query.filter((Notice.department_id.is_(None)) | (Notice.department_id == department_id))
     return [notice_json(row) for row in query.order_by(Notice.published_at.desc()).all()]
 
 
@@ -58,6 +59,22 @@ def create_notice(data: NoticeCreate, request: Request,
     db.add(row)
     db.flush()
     audit_event(db, user=user, action="notice.create", entity_type="notice", entity_id=row.id, request=request)
+    if row.is_published:
+        recipients = db.query(User).filter(User.is_active.is_(True))
+        if row.audience != "all": recipients = recipients.filter(User.role == row.audience)
+        users = recipients.all()
+        for recipient in users:
+            if row.department_id is not None:
+                if recipient.role == "student":
+                    profile = db.query(Student).filter_by(user_id=recipient.id).first()
+                elif recipient.role == "faculty":
+                    profile = db.query(Faculty).filter_by(user_id=recipient.id).first()
+                else:
+                    profile = None
+                if recipient.role != "admin" and (profile is None or profile.department_id != row.department_id):
+                    continue
+            db.add(Notification(user_id=recipient.id, title=f"University notice: {row.title}",
+                message=row.content, notification_type="notice"))
     commit_or_conflict(db)
     return notice_json(row)
 
