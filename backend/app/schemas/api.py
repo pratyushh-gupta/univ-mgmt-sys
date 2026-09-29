@@ -1,5 +1,5 @@
 from datetime import date
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 class LoginRequest(BaseModel):
     user_id: str
@@ -16,7 +16,14 @@ class StudentCreate(BaseModel):
     department: str
     semester: int = Field(ge=1)
     email: EmailStr
-    password: str = "student123"
+    password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must not exceed 72 UTF-8 bytes")
+        return value
 
 class FacultyCreate(BaseModel):
     id: str
@@ -24,7 +31,14 @@ class FacultyCreate(BaseModel):
     department: str
     subject: str = ""
     email: EmailStr
-    password: str = "faculty123"
+    password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must not exceed 72 UTF-8 bytes")
+        return value
 
 class CourseCreate(BaseModel):
     code: str

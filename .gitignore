@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local configuration and databases
+.env
+.env.*
+!**/.env.example
+*.db
+*.sqlite
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+
+# Editors
+.vscode/
+.idea/
+.npm-cache/
+.pip-cache/

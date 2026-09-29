@@ -1,61 +1,102 @@
-import { useState } from "react";
-import { facultyCourseRoster } from "../../data/mockData";
+import { useEffect, useState } from "react";
+import { apiRequest } from "../../api/client";
+import useApiData from "../../hooks/useApiData";
 
 export default function MarkAttendance() {
-  const [status, setStatus] = useState(
-    Object.fromEntries(facultyCourseRoster.map((s) => [s.id, "present"]))
-  );
+  const { data: courses, loading, error } = useApiData("/faculty/courses");
+  const [selectedCode, setSelectedCode] = useState("");
+  const code = selectedCode || courses[0]?.code || "";
+  const [rosterState, setRosterState] = useState({ courseCode: null, status: "idle", rows: [], error: "" });
+  const [status, setStatus] = useState({});
+  const [date, setDate] = useState("");
+  const [message, setMessage] = useState("");
+  const rosterMatchesCourse = rosterState.courseCode === code;
+  const rosterReady = Boolean(code && rosterMatchesCourse && rosterState.status === "loaded");
+  const rosterLoading = Boolean(code && (!rosterMatchesCourse || rosterState.status === "loading"));
+  const rosterError = rosterMatchesCourse && rosterState.status === "error" ? rosterState.error : "";
+  const roster = rosterReady ? rosterState.rows : [];
 
-  function toggle(id, value) {
-    setStatus({ ...status, [id]: value });
-  }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const now = new Date();
+      setDate(new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
-  function handleSave() {
-    // TODO: FastAPI POST /attendance yahan call hoga: { course_id, date, status }
-    alert("Attendance saved (demo only — backend jab ready hoga tab yeh save hoga).");
+  useEffect(() => {
+    if (!code) return undefined;
+    const controller = new AbortController();
+    apiRequest(`/faculty/roster/${encodeURIComponent(code)}`, { signal: controller.signal })
+      .then((rows) => {
+        if (controller.signal.aborted) return;
+        setRosterState({ courseCode: code, status: "loaded", rows, error: "" });
+        setStatus(Object.fromEntries(rows.map((student) => [student.id, "present"])));
+      })
+      .catch((requestError) => {
+        if (controller.signal.aborted) return;
+        setRosterState({ courseCode: code, status: "error", rows: [], error: requestError.message });
+      });
+    return () => controller.abort();
+  }, [code]);
+
+  async function save() {
+    setMessage("");
+    try {
+      await apiRequest("/attendance", {
+        method: "POST",
+        body: {
+          course_code: code,
+          date,
+          records: roster.map((student) => ({ student_id: student.id, status: status[student.id] })),
+        },
+      });
+      setMessage("Attendance saved.");
+    } catch (saveError) {
+      setMessage(saveError.message);
+    }
   }
 
   return (
     <section className="panel full">
       <div className="panel-title">
-        <h2>Mark Attendance — Operating Systems</h2>
-        <span className="badge">{new Date().toLocaleDateString()}</span>
+        <h2>Mark Attendance</h2>
+        <span className="badge">{date}</span>
       </div>
-
+      {error && <p role="alert">{error}</p>}
+      {rosterError && <p role="alert">{rosterError}</p>}
+      <div className="inline-form">
+        <select
+          value={code}
+          onChange={(event) => {
+            setSelectedCode(event.target.value);
+            setRosterState({ courseCode: event.target.value, status: "loading", rows: [], error: "" });
+            setMessage("");
+          }}
+          aria-label="Course"
+          disabled={loading || !courses.length}
+        >
+          {courses.map((course) => <option key={course.code} value={course.code}>{course.code} — {course.name}</option>)}
+        </select>
+        <input type="date" value={date} onChange={(event) => setDate(event.target.value)} aria-label="Attendance date" />
+      </div>
+      {loading && <p>Loading courses…</p>}
+      {rosterLoading && <p role="status">Loading students for {code}…</p>}
+      {message && <p role="status">{message}</p>}
       <div className="table">
-        <div className="table-head result-head">
-          <span>Student</span>
-          <span>ID</span>
-          <span>Status</span>
-        </div>
-
-        {facultyCourseRoster.map((s) => (
-          <div className="table-row result-row" key={s.id}>
-            <strong>{s.name}</strong>
-            <span>{s.id}</span>
+        <div className="table-head result-head"><span>Student</span><span>ID</span><span>Status</span></div>
+        {roster.map((student) => (
+          <div className="table-row result-row" key={student.id}>
+            <strong>{student.name}</strong>
+            <span>{student.id}</span>
             <div className="attendance-toggle">
-              <button
-                type="button"
-                className={status[s.id] === "present" ? "toggle-btn present active" : "toggle-btn present"}
-                onClick={() => toggle(s.id, "present")}
-              >
-                Present
-              </button>
-              <button
-                type="button"
-                className={status[s.id] === "absent" ? "toggle-btn absent active" : "toggle-btn absent"}
-                onClick={() => toggle(s.id, "absent")}
-              >
-                Absent
-              </button>
+              <button type="button" className={status[student.id] === "present" ? "toggle-btn present active" : "toggle-btn present"} onClick={() => setStatus({ ...status, [student.id]: "present" })}>Present</button>
+              <button type="button" className={status[student.id] === "absent" ? "toggle-btn absent active" : "toggle-btn absent"} onClick={() => setStatus({ ...status, [student.id]: "absent" })}>Absent</button>
             </div>
           </div>
         ))}
       </div>
-
-      <button className="login-btn save-attendance-btn" onClick={handleSave}>
-        Save Attendance
-      </button>
+      <button className="login-btn save-attendance-btn" disabled={!code || !date || !rosterReady || !roster.length} onClick={save}>Save Attendance</button>
     </section>
   );
 }

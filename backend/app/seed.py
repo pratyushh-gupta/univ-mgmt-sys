@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from .models import User, Course, Enrollment, Assignment, Notice
-from .auth import hash_password
+from .core.security import hash_password
 
 def seed(db: Session):
     if db.query(User).count():

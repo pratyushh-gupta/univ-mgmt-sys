@@ -1,35 +1,21 @@
-# UniPortal FastAPI Backend
+# FastAPI Backend
 
-Backend for the existing `univ-mgmt-sys` React/Vite project.
+FastAPI + SQLAlchemy 2.x backend. Local development uses SQLite; PostgreSQL support can be configured later via `DATABASE_URL` without changing application code.
 
-## Stack
-- FastAPI
-- SQLAlchemy 2.x
-- SQLite by default
-- JWT authentication
-- Role-based authorization
-- CORS for Vite (`http://localhost:5173`)
+## Setup (Windows PowerShell)
 
-## Run
-
-```bash
+```powershell
 cd backend
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
+py -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env   # Windows
-# cp .env.example .env   # macOS/Linux
-
+Copy-Item .env.example .env
 python run.py
 ```
 
-API docs: http://localhost:8000/docs
+API docs: http://localhost:8000/docs. The default `DATABASE_URL=sqlite:///./university.db` creates a local SQLite database from the backend working directory. Configure `JWT_SECRET`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `ENVIRONMENT`, and `CORS_ORIGINS` in the backend `.env`; it is loaded from the backend directory even when started elsewhere. Production requires an explicit, non-placeholder JWT secret of at least 32 characters. Tables initialize on startup, but demo users and sample data are seeded only in development. Never commit `.env`.
 
-## Seeded accounts
+## Seeded development accounts
 
 | Role | User ID | Password |
 |---|---|---|
@@ -37,21 +23,23 @@ API docs: http://localhost:8000/docs
 | Faculty | `F001` | `faculty123` |
 | Student | `2024CS1042` | `student123` |
 
-## Main endpoints
+Change development passwords for any non-local environment.
 
-- `POST /auth/login`
-- `GET /auth/me`
-- `GET/POST/DELETE /students`
-- `GET/POST/DELETE /faculty`
-- `GET/POST/DELETE /courses`
-- `GET /student/courses`
-- `GET /student/attendance`
-- `GET /student/results`
-- `GET /student/assignments`
+New student and faculty passwords must contain at least 8 characters. Course creation rejects unknown faculty IDs; attendance and results accept only students enrolled in the selected course. Production deployments must provision real user accounts through a controlled administrative workflow; demo accounts are never seeded there.
+
+## API endpoints
+
+- `GET /health`
+- `POST /auth/login`, `GET /auth/me`
+- `GET/POST /students`, `DELETE /students/{student_id}` (Admin)
+- `GET/POST /faculty`, `DELETE /faculty/{faculty_id}` (Admin)
+- `GET/POST /courses`, `DELETE /courses/{code}` (writes require Admin)
+- `GET /student/courses`, `/student/attendance`, `/student/results`, `/student/assignments` (Student)
 - `GET /notices`
-- `GET /faculty/courses`
-- `GET /faculty/roster/{course_code}`
-- `POST /attendance`
-- `POST /results`
+- `GET /faculty/courses`, `/faculty/roster/{course_code}` (Faculty)
+- `POST /attendance`, `/results` (Faculty)
+- `GET /admin/overview` (Admin)
 
-The frontend currently uses mock data, so its components still need to be switched from `src/data/mockData.js` to these API endpoints.
+Authentication failures return 401 and role failures return 403. Validation uses FastAPI's 422 responses; missing resources return 404; duplicates return 409. Unexpected server errors return a generic 500 while details remain in server logs.
+
+The frontend calls the existing endpoints through `frontend/src/api`. Timetable, assignment submission, and related expanded workflows are not yet supported by this API. PostgreSQL deployment, Alembic, and the full database redesign are Phase 2 work.
