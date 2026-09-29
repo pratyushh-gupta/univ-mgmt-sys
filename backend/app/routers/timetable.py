@@ -3,11 +3,32 @@ from sqlalchemy.orm import Session
 
 from ..core.dependencies import require_roles
 from ..database.connection import get_db
-from ..models import ClassSchedule, CourseOffering, Enrollment, User
-from ..schemas import ClassScheduleCreate
+from ..models import ClassSchedule, CourseOffering, Enrollment, Semester, User
+from ..schemas import ClassScheduleCreate, ClassScheduleUpdate
 from ..services.domain import audit_event, commit_or_conflict, faculty_offering, faculty_profile, student_profile
 
 router = APIRouter()
+
+
+def validate_no_conflicts(db: Session, offering: CourseOffering, day: int, start_time, end_time,
+                          room: str | None, exclude_id: int | None = None) -> None:
+    if end_time <= start_time:
+        raise HTTPException(status_code=422, detail="Schedule end time must follow start time")
+    query = db.query(ClassSchedule).join(CourseOffering).filter(
+        ClassSchedule.is_active.is_(True), ClassSchedule.day_of_week == day,
+        ClassSchedule.start_time < end_time, ClassSchedule.end_time > start_time)
+    query = query.join(Semester, Semester.id == CourseOffering.semester_id).filter(
+        Semester.start_date <= offering.semester.end_date, Semester.end_date >= offering.semester.start_date)
+    if exclude_id is not None: query = query.filter(ClassSchedule.id != exclude_id)
+    my_students = db.query(Enrollment.student_id).filter_by(course_offering_id=offering.id, status="active")
+    for existing in query.all():
+        other = existing.course_offering
+        same_faculty = other.faculty_id == offering.faculty_id
+        same_room = bool(room and existing.room and room.strip().casefold() == existing.room.strip().casefold())
+        same_cohort = db.query(Enrollment.id).filter(Enrollment.course_offering_id == other.id,
+            Enrollment.status == "active", Enrollment.student_id.in_(my_students)).first() is not None
+        if same_faculty or same_room or same_cohort:
+            raise HTTPException(status_code=409, detail="Faculty, room, or enrolled student cohort has a conflicting class schedule")
 
 
 def schedule_json(row: ClassSchedule) -> dict:
@@ -40,21 +61,33 @@ def create_schedule(data: ClassScheduleCreate, request: Request,
         raise HTTPException(status_code=404, detail="Active course offering not found")
     if user.role == "faculty":
         faculty_offering(db, user, offering.id)
-    if data.end_time <= data.start_time:
-        raise HTTPException(status_code=422, detail="Schedule end time must follow start time")
-    candidates = db.query(ClassSchedule).join(CourseOffering).filter(
-        ClassSchedule.is_active.is_(True), ClassSchedule.day_of_week == data.day_of_week,
-        CourseOffering.semester_id == offering.semester_id,
-        ClassSchedule.start_time < data.end_time, ClassSchedule.end_time > data.start_time).all()
-    for existing in candidates:
-        same_faculty = existing.course_offering.faculty_id == offering.faculty_id
-        same_room = bool(data.room and existing.room and data.room.casefold() == existing.room.casefold())
-        if same_faculty or same_room:
-            raise HTTPException(status_code=409, detail="Faculty or room has a conflicting class schedule")
+    validate_no_conflicts(db, offering, data.day_of_week, data.start_time, data.end_time, data.room)
     row = ClassSchedule(**data.model_dump())
     db.add(row)
     db.flush()
     audit_event(db, user=user, action="class_schedule.create", entity_type="class_schedule", entity_id=row.id, request=request)
+    commit_or_conflict(db)
+    return schedule_json(row)
+
+
+@router.patch("/class-schedules/{schedule_id}")
+def update_schedule(schedule_id: int, data: ClassScheduleUpdate, request: Request,
+                    user: User = Depends(require_roles("admin", "faculty")), db: Session = Depends(get_db)):
+    row = db.get(ClassSchedule, schedule_id)
+    if row is None or not row.is_active:
+        raise HTTPException(status_code=404, detail="Active schedule not found")
+    if user.role == "faculty": faculty_offering(db, user, row.course_offering_id)
+    changes = data.model_dump(exclude_unset=True)
+    proposed_offering = db.get(CourseOffering, changes.get("course_offering_id", row.course_offering_id))
+    if proposed_offering is None or not proposed_offering.is_active:
+        raise HTTPException(status_code=404, detail="Active course offering not found")
+    if user.role == "faculty": faculty_offering(db, user, proposed_offering.id)
+    proposed = {"day": changes.get("day_of_week", row.day_of_week),
+        "start_time": changes.get("start_time", row.start_time), "end_time": changes.get("end_time", row.end_time),
+        "room": changes.get("room", row.room)}
+    validate_no_conflicts(db, proposed_offering, **proposed, exclude_id=row.id)
+    for key, value in changes.items(): setattr(row, key, value)
+    audit_event(db, user=user, action="class_schedule.update", entity_type="class_schedule", entity_id=row.id, request=request)
     commit_or_conflict(db)
     return schedule_json(row)
 

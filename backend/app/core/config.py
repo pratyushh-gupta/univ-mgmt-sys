@@ -25,6 +25,7 @@ class Settings:
     jwt_secret: str = field(init=False)
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
+    low_attendance_threshold_percent: int = int(os.getenv("LOW_ATTENDANCE_THRESHOLD_PERCENT", "75"))
     environment: str = os.getenv("ENVIRONMENT", "development").strip().lower()
     cors_origins: list[str] = field(default_factory=lambda: [
         value.strip()
@@ -33,6 +34,8 @@ class Settings:
     ])
 
     def __post_init__(self):
+        if not 0 <= self.low_attendance_threshold_percent <= 100:
+            raise RuntimeError("LOW_ATTENDANCE_THRESHOLD_PERCENT must be between 0 and 100")
         configured_secret = os.getenv("JWT_SECRET", "").strip()
         if self.environment == "production":
             if (

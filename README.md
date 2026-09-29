@@ -59,7 +59,9 @@ Set `VITE_API_URL` in `frontend/.env` when the backend does not use `http://loca
 
 Principal entities include User, Student, Faculty, Department, AcademicYear, Semester, AdmissionApplication, Course, CourseOffering, Enrollment, ClassSchedule, AttendanceSession/AttendanceRecord, Assignment/Submission, Exam/ExamSchedule, Result, Notice, Notification, and AuditLog. Phase 3 adds the admission review-to-student workflow, course offering lifecycle and capacity-aware enrollment, academic history, student/faculty schedules and rosters, and lifecycle notifications. Unsupported timetable, submission file storage, and grading summaries are not fabricated.
 
-The Phase 3 schema revision is `f54c14450324` (parent `80d2893ee48c`). Apply it with `alembic upgrade head` from `backend/`.
+The Phase 4 schema starts at `b731f9d1c2a4` (parent `f54c14450324`) and current head is `c84a9f2160d3`, which adds a database constraint requiring positive exam maximum marks. Apply migrations with `alembic upgrade head` from `backend/`.
+
+Phase 4 supports attendance session edits and university-wide attendance filters; assignment draft/submission/grading; exam creation, editing, and schedule conflict validation; student-visible published results; final-result-only SGPA/CGPA; and weekly timetable management. GPA uses one latest published final result per course offering, weighted by the catalog course credits. The low-attendance warning defaults to 75% and can be changed with `LOW_ATTENDANCE_THRESHOLD_PERCENT`. Submission file references are metadata/URLs only; the application does not store uploaded binary files. Deadline reminder scheduling is not included because the project has no background job runner.
 
 ## Checks
 
@@ -73,4 +75,4 @@ npm run lint
 npm run build
 ```
 
-The integration suite uses the PostgreSQL database configured by `DATABASE_URL` and rolls its test data back. Do not point it at a shared or production database. Unimplemented workflows should show unavailable states instead of fabricated data.
+The PostgreSQL integration suite covers admissions/enrollment plus Phase 4 attendance, submissions, exams, results/GPA, authorization, notification scope, and timetable validation. It uses the database configured by `DATABASE_URL` and rolls its test data back. Do not point it at a shared or production database. Unimplemented workflows should show unavailable states instead of fabricated data.

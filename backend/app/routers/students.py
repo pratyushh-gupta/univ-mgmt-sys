@@ -9,7 +9,7 @@ from ..core.security import hash_password
 from ..database.connection import get_db
 from ..models import Assignment, AttendanceRecord, AttendanceSession, CourseOffering, Department, Enrollment, ExamSchedule, Notification, Notice, Result, Semester, Student, Submission, User
 from ..schemas import StudentCreate, StudentUpdate
-from ..services.domain import audit_event, commit_or_conflict, student_profile
+from ..services.domain import LOW_ATTENDANCE_THRESHOLD_PERCENT, audit_event, commit_or_conflict, student_profile
 from ..services.serializers import user_json
 
 router = APIRouter()
@@ -153,7 +153,10 @@ def student_dashboard(user: User = Depends(require_roles("student")), db: Sessio
     student = student_profile(db, user)
     enrollments = db.query(Enrollment).filter_by(student_id=student.id, status="active").all()
     offering_ids = [row.course_offering_id for row in enrollments]
-    attendance = db.query(AttendanceRecord).filter_by(student_id=student.id).all()
+    attendance = db.query(AttendanceRecord).join(AttendanceSession,
+        AttendanceRecord.attendance_session_id == AttendanceSession.id).filter(
+            AttendanceRecord.student_id == student.id, AttendanceSession.status == "published",
+            AttendanceRecord.status.in_(("present", "absent", "late"))).all()
     attendance_total = len(attendance)
     attendance_present = sum(record.status in {"present", "late"} for record in attendance)
     submitted_ids = select(Submission.assignment_id).filter_by(student_id=student.id)
@@ -204,10 +207,11 @@ def student_courses(user: User = Depends(require_roles("student")), db: Session 
     output = []
     for enrollment, offering in rows:
         total = db.query(AttendanceRecord).join(AttendanceSession).filter(
-            AttendanceRecord.student_id == profile.id, AttendanceSession.course_offering_id == offering.id).count()
+            AttendanceRecord.student_id == profile.id, AttendanceSession.course_offering_id == offering.id,
+            AttendanceSession.status == "published", AttendanceRecord.status.in_(("present", "absent", "late"))).count()
         present = db.query(AttendanceRecord).join(AttendanceSession).filter(
             AttendanceRecord.student_id == profile.id, AttendanceSession.course_offering_id == offering.id,
-            AttendanceRecord.status.in_(("present", "late"))).count()
+            AttendanceSession.status == "published", AttendanceRecord.status.in_(("present", "late"))).count()
         output.append({"id": offering.id, "code": offering.course.code, "name": offering.course.name,
             "faculty": offering.faculty.user.name, "department": offering.course.department.name,
             "semester": offering.semester.name, "section": offering.section,
@@ -217,19 +221,75 @@ def student_courses(user: User = Depends(require_roles("student")), db: Session 
 
 @router.get("/student/attendance")
 def student_attendance(user: User = Depends(require_roles("student")), db: Session = Depends(get_db)):
-    courses = student_courses(user, db)
-    return {"overall": round(sum(c["attendance"] for c in courses) / len(courses)) if courses else 0, "courses": courses}
+    profile = student_profile(db, user)
+    enrollments = db.query(Enrollment).join(CourseOffering).filter(
+        Enrollment.student_id == profile.id, Enrollment.status.in_(("active", "completed"))).all()
+    courses, semesters = [], {}
+    for enrollment in enrollments:
+        offering = enrollment.course_offering
+        records = db.query(AttendanceRecord).join(AttendanceSession,
+            AttendanceRecord.attendance_session_id == AttendanceSession.id).filter(
+                AttendanceRecord.student_id == profile.id, AttendanceRecord.course_offering_id == offering.id,
+                AttendanceSession.status == "published", AttendanceRecord.status.in_(("present", "absent", "late"))).all()
+        total = len(records)
+        attended = sum(record.status in {"present", "late"} for record in records)
+        absent = sum(record.status == "absent" for record in records)
+        percent = round(attended / total * 100, 2) if total else None
+        item = {"id": offering.id, "course_offering_id": offering.id, "code": offering.course.code,
+            "name": offering.course.name, "semester": offering.semester.name,
+            "academic_year": offering.semester.academic_year.name, "total_sessions": total,
+            "attended_sessions": attended, "absent_sessions": absent, "attendance": percent,
+            "low_attendance": percent is not None and percent < LOW_ATTENDANCE_THRESHOLD_PERCENT}
+        courses.append(item)
+        key = (offering.semester_id, offering.semester.name, offering.semester.academic_year.name)
+        accumulator = semesters.setdefault(key, {"total": 0, "attended": 0, "absent": 0})
+        accumulator["total"] += total
+        accumulator["attended"] += attended
+        accumulator["absent"] += absent
+    total = sum(item["total_sessions"] for item in courses)
+    attended = sum(item["attended_sessions"] for item in courses)
+    semester_summaries = []
+    for (semester_id, name, year), counts in sorted(semesters.items()):
+        percent = round(counts["attended"] / counts["total"] * 100, 2) if counts["total"] else None
+        semester_summaries.append({"semester_id": semester_id, "semester": name, "academic_year": year,
+            "total_sessions": counts["total"], "attended_sessions": counts["attended"],
+            "absent_sessions": counts["absent"], "attendance": percent,
+            "low_attendance": percent is not None and percent < LOW_ATTENDANCE_THRESHOLD_PERCENT})
+    overall = round(attended / total * 100, 2) if total else None
+    return {"overall": overall, "threshold_percent": LOW_ATTENDANCE_THRESHOLD_PERCENT,
+        "total_sessions": total, "attended_sessions": attended, "absent_sessions": sum(c["absent_sessions"] for c in courses),
+        "low_attendance": overall is not None and overall < LOW_ATTENDANCE_THRESHOLD_PERCENT,
+        "courses": courses, "semesters": semester_summaries}
 
 
 @router.get("/student/results")
 def student_results(user: User = Depends(require_roles("student")), db: Session = Depends(get_db)):
     profile = student_profile(db, user)
-    rows = db.query(Result).filter_by(student_id=profile.id, status="published").all()
-    credits_total = sum(row.course_offering.course.credits for row in rows)
-    points_total = sum((row.grade_point or 0) * row.course_offering.course.credits for row in rows)
-    return {"cgpa": round(points_total / credits_total, 2) if credits_total else 0,
-        "results": [{"subject": row.course_offering.course.name, "assessment": row.assessment_name,
-            "grade": row.grade, "point": float(row.grade_point or 0), "marks": float(row.marks),
+    rows = db.query(Result).filter_by(student_id=profile.id, status="published").order_by(Result.published_at.desc()).all()
+    final_by_offering = {}
+    for row in rows:
+        if row.is_final and row.grade_point is not None and row.max_marks > 0 and row.marks >= 0 and row.marks <= row.max_marks:
+            final_by_offering.setdefault(row.course_offering_id, row)
+    by_semester = {}
+    credits_total = points_total = 0
+    for row in final_by_offering.values():
+        semester = row.course_offering.semester
+        item = by_semester.setdefault(semester.id, {"semester_id": semester.id, "semester": semester.name,
+            "academic_year": semester.academic_year.name, "credits": 0, "weighted_points": 0})
+        credits = row.course_offering.course.credits
+        item["credits"] += credits
+        item["weighted_points"] += float(row.grade_point) * credits
+        credits_total += credits
+        points_total += float(row.grade_point) * credits
+    semester_results = [{**item, "sgpa": round(item["weighted_points"] / item["credits"], 2) if item["credits"] else None}
+        for item in sorted(by_semester.values(), key=lambda value: (value["academic_year"], value["semester"]))]
+    return {"cgpa": round(points_total / credits_total, 2) if credits_total else None,
+        "sgpa_by_semester": semester_results,
+        "results": [{"course_offering_id": row.course_offering_id,
+            "semester": row.course_offering.semester.name, "academic_year": row.course_offering.semester.academic_year.name,
+            "subject": row.course_offering.course.name, "course_code": row.course_offering.course.code,
+            "assessment": row.assessment_name, "is_final": row.is_final, "grade": row.grade,
+            "point": float(row.grade_point) if row.grade_point is not None else None, "marks": float(row.marks),
             "max_marks": float(row.max_marks), "credits": row.course_offering.course.credits} for row in rows]}
 
 
@@ -238,8 +298,18 @@ def student_assignments(user: User = Depends(require_roles("student")), db: Sess
     profile = student_profile(db, user)
     rows = db.query(Assignment, Enrollment).join(Enrollment, Enrollment.course_offering_id == Assignment.course_offering_id).filter(
         Enrollment.student_id == profile.id, Enrollment.status == "active", Assignment.status == "published").all()
-    return [{"id": assignment.id, "title": assignment.title, "subject": assignment.course_offering.course.name,
-        "due": assignment.due_date.isoformat(), "status": "Submitted" if db.query(Submission).filter(
+    result = []
+    now = datetime.now(timezone.utc)
+    for assignment, _ in rows:
+        submission = db.query(Submission).filter(
             Submission.assignment_id == assignment.id, Submission.student_id == profile.id,
-            Submission.status.in_(("submitted", "graded", "returned"))).first() else "Pending",
-        "max_marks": float(assignment.max_marks)} for assignment, _ in rows]
+            ).first()
+        result.append({"id": assignment.id, "title": assignment.title, "subject": assignment.course_offering.course.name,
+            "course_code": assignment.course_offering.course.code,
+            "published_at": assignment.published_at.isoformat() if assignment.published_at else None,
+            "due": assignment.due_date.isoformat(), "status": submission.status if submission else "not_submitted",
+            "max_marks": float(assignment.max_marks), "marks": float(submission.marks) if submission and submission.marks is not None else None,
+            "feedback": submission.feedback if submission else None,
+            "text_content": submission.text_content if submission else None,
+            "late": bool(submission and submission.status == "late" or not submission and assignment.due_date < now)})
+    return result

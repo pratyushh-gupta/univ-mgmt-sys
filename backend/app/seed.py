@@ -8,8 +8,9 @@ from .core.config import settings
 from .core.security import hash_password
 from .database.connection import SessionLocal
 from .models import (
-    AcademicYear, Assignment, Course, CourseOffering, Department, Enrollment,
-    Exam, ExamSchedule, Faculty, Notice, Notification, Result, Semester, Student, User,
+    AcademicYear, Assignment, AttendanceRecord, AttendanceSession, ClassSchedule, Course, CourseOffering,
+    Department, Enrollment, Exam, ExamSchedule, Faculty, Notice, Notification, Result, Semester, Student,
+    Submission, User,
 )
 
 
@@ -137,9 +138,18 @@ def seed(db: Session) -> None:
         db.add(Enrollment(student_id=student_two.id, course_offering_id=electronics_offering.id))
 
     if db.query(Assignment).filter_by(course_offering_id=offerings[0].id, title="Operating Systems Assignment").first() is None:
-        db.add(Assignment(course_offering_id=offerings[0].id, faculty_id=faculty.id,
+        assignment = Assignment(course_offering_id=offerings[0].id, faculty_id=faculty.id,
             title="Operating Systems Assignment", description="Development sample assignment",
-            due_date=datetime.now(timezone.utc) + timedelta(days=14), max_marks=100, status="published"))
+            due_date=datetime.now(timezone.utc) + timedelta(days=14), max_marks=100, status="published",
+            published_at=datetime.now(timezone.utc))
+        db.add(assignment)
+    else:
+        assignment = db.query(Assignment).filter_by(course_offering_id=offerings[0].id,
+            title="Operating Systems Assignment").first()
+    if db.query(Submission).filter_by(assignment_id=assignment.id, student_id=student.id).first() is None:
+        db.add(Submission(assignment_id=assignment.id, course_offering_id=offerings[0].id,
+            student_id=student.id, text_content="Development sample submission metadata.", status="submitted",
+            submitted_at=datetime.now(timezone.utc)))
     if db.query(Notice).filter_by(title="Welcome to the development portal").first() is None:
         db.add(Notice(title="Welcome to the development portal", content="This notice is development sample data.",
             author_id=admin.id, audience="all", is_published=True, published_at=datetime.now(timezone.utc)))
@@ -152,12 +162,36 @@ def seed(db: Session) -> None:
     if not db.query(ExamSchedule).filter_by(exam_id=exam.id, course_offering_id=offerings[0].id).first():
         db.add(ExamSchedule(exam_id=exam.id, course_offering_id=offerings[0].id,
             semester_id=semester.id, exam_date=date(2026, 10, 12), start_time=time(10), end_time=time(12), room="Hall 1"))
+    for session_date, status in ((date(2026, 9, 8), "present"), (date(2026, 9, 15), "absent")):
+        attendance_session = db.query(AttendanceSession).filter_by(course_offering_id=offerings[0].id,
+            session_date=session_date, start_time=time(9)).first()
+        if attendance_session is None:
+            attendance_session = AttendanceSession(course_offering_id=offerings[0].id, faculty_id=faculty.id,
+                session_date=session_date, start_time=time(9), end_time=time(10), topic="Development sample class",
+                status="published")
+            db.add(attendance_session)
+            db.flush()
+        if db.query(AttendanceRecord).filter_by(attendance_session_id=attendance_session.id,
+                student_id=student.id).first() is None:
+            db.add(AttendanceRecord(attendance_session_id=attendance_session.id, course_offering_id=offerings[0].id,
+                student_id=student.id, status=status))
+    if db.query(ClassSchedule).filter_by(course_offering_id=offerings[0].id, day_of_week=1,
+            start_time=time(9)).first() is None:
+        db.add(ClassSchedule(course_offering_id=offerings[0].id, day_of_week=1, start_time=time(9),
+            end_time=time(10), room="Engineering 101", is_active=True))
     result = db.query(Result).filter_by(student_id=student.id, course_offering_id=offerings[0].id,
         assessment_name="Development Midterm").first()
     if result is None:
         result = Result(student_id=student.id, course_offering_id=offerings[0].id,
             assessment_name="Development Midterm", marks=82, max_marks=100, grade="A", grade_point=9,
             status="published", published_at=datetime.now(timezone.utc), published_by=admin.id)
+    final_result = db.query(Result).filter_by(student_id=student.id, course_offering_id=offerings[0].id,
+        assessment_name="Development Final").first()
+    if final_result is None:
+        final_result = Result(student_id=student.id, course_offering_id=offerings[0].id,
+            assessment_name="Development Final", marks=91, max_marks=100, grade="A+", grade_point=10,
+            status="published", is_final=True, published_at=datetime.now(timezone.utc), published_by=admin.id)
+        db.add(final_result)
         db.add(result)
     if not db.query(Notification).filter_by(user_id=student.user_id, title="Welcome to the portal").first():
         db.add(Notification(user_id=student.user_id, title="Welcome to the portal",
@@ -165,6 +199,15 @@ def seed(db: Session) -> None:
     if not db.query(Notification).filter_by(user_id=student_two.user_id, title="Welcome to the portal").first():
         db.add(Notification(user_id=student_two.user_id, title="Welcome to the portal",
             message="Your development student account is ready.", notification_type="general"))
+    db.flush()
+    attendance_rows = db.query(AttendanceRecord.status).filter_by(student_id=student.id,
+        course_offering_id=offerings[0].id).all()
+    attendance_count = len(attendance_rows)
+    attended_count = sum(status in {"present", "late"} for (status,) in attendance_rows)
+    if attendance_count and attended_count / attendance_count * 100 < settings.low_attendance_threshold_percent and not db.query(Notification).filter_by(user_id=student.user_id, title="Low attendance warning").first():
+        db.add(Notification(user_id=student.user_id, title="Low attendance warning",
+            message=f"Your attendance for CS401 is below the configured {settings.low_attendance_threshold_percent}% development warning threshold.",
+            notification_type="low_attendance"))
     db.commit()
 
 
