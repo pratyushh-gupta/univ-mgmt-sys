@@ -1,39 +1,180 @@
-from datetime import date, timedelta
-from sqlalchemy.orm import Session
-from .models import User, Course, Enrollment, Assignment, Notice
-from .core.security import hash_password
+"""Idempotent development-only demo data seeder."""
 
-def seed(db: Session):
-    if db.query(User).count():
-        return
-    admin = User(user_id="admin", name="Admin User", email="admin@university.edu",
-                 password_hash=hash_password("admin123"), role="admin")
-    faculty = User(user_id="F001", name="Dr. Sharma", email="sharma@university.edu",
-                   password_hash=hash_password("faculty123"), role="faculty",
-                   department="Computer Science")
-    student = User(user_id="2024CS1042", name="Prem Kumar", email="prem@university.edu",
-                   password_hash=hash_password("student123"), role="student",
-                   department="Computer Science", semester=4)
-    db.add_all([admin, faculty, student]); db.flush()
+from datetime import date, datetime, time, timedelta, timezone
+
+from sqlalchemy.orm import Session
+
+from .core.config import settings
+from .core.security import hash_password
+from .database.connection import SessionLocal
+from .models import (
+    AcademicYear, Assignment, Course, CourseOffering, Department, Enrollment,
+    Exam, ExamSchedule, Faculty, Notice, Notification, Result, Semester, Student, User,
+)
+
+
+def seed(db: Session) -> None:
+    if settings.environment != "development":
+        raise RuntimeError("Demo data can only be seeded when ENVIRONMENT=development")
+
+    department = db.query(Department).filter_by(code="CSE").first()
+    if department is None:
+        department = Department(code="CSE", name="Computer Science", description="Development sample department")
+        db.add(department)
+        db.flush()
+    engineering = db.query(Department).filter_by(code="ECE").first()
+    if engineering is None:
+        engineering = Department(code="ECE", name="Electronics Engineering", description="Development sample department")
+        db.add(engineering)
+        db.flush()
+
+    academic_year = db.query(AcademicYear).filter_by(name="2026-2027").first()
+    if academic_year is None:
+        academic_year = AcademicYear(name="2026-2027", start_date=date(2026, 8, 1), end_date=date(2027, 7, 31), is_active=True)
+        db.add(academic_year)
+        db.flush()
+    semester = db.query(Semester).filter_by(academic_year_id=academic_year.id, number=1).first()
+    if semester is None:
+        semester = Semester(academic_year_id=academic_year.id, name="Semester 1", number=1,
+            start_date=date(2026, 8, 1), end_date=date(2026, 12, 20), is_active=True)
+        db.add(semester)
+        db.flush()
+    semester_two = db.query(Semester).filter_by(academic_year_id=academic_year.id, number=2).first()
+    if semester_two is None:
+        semester_two = Semester(academic_year_id=academic_year.id, name="Semester 2", number=2,
+            start_date=date(2027, 1, 1), end_date=date(2027, 7, 31), is_active=False)
+        db.add(semester_two)
+        db.flush()
+
+    admin = db.query(User).filter_by(user_id="admin").first()
+    if admin is None:
+        admin = User(user_id="admin", name="Admin User", email="admin@university.edu",
+            password_hash=hash_password("admin123"), role="admin")
+        db.add(admin)
+
+    faculty_user = db.query(User).filter_by(user_id="F001").first()
+    if faculty_user is None:
+        faculty_user = User(user_id="F001", name="Dr. Sharma", email="sharma@university.edu",
+            password_hash=hash_password("faculty123"), role="faculty")
+        db.add(faculty_user)
+        db.flush()
+    faculty = db.query(Faculty).filter_by(user_id=faculty_user.id).first()
+    if faculty is None:
+        faculty = Faculty(user_id=faculty_user.id, employee_id="F001", department_id=department.id, designation="Lecturer")
+        db.add(faculty)
+        db.flush()
+
+    faculty_two_user = db.query(User).filter_by(user_id="F002").first()
+    if faculty_two_user is None:
+        faculty_two_user = User(user_id="F002", name="Dr. Mehta", email="mehta@university.edu",
+            password_hash=hash_password("faculty456"), role="faculty")
+        db.add(faculty_two_user)
+        db.flush()
+    faculty_two = db.query(Faculty).filter_by(user_id=faculty_two_user.id).first()
+    if faculty_two is None:
+        faculty_two = Faculty(user_id=faculty_two_user.id, employee_id="F002", department_id=engineering.id, designation="Assistant Professor")
+        db.add(faculty_two)
+        db.flush()
+
+    student_user = db.query(User).filter_by(user_id="2024CS1042").first()
+    if student_user is None:
+        student_user = User(user_id="2024CS1042", name="Prem Kumar", email="prem@university.edu",
+            password_hash=hash_password("student123"), role="student")
+        db.add(student_user)
+        db.flush()
+    student = db.query(Student).filter_by(user_id=student_user.id).first()
+    if student is None:
+        student = Student(user_id=student_user.id, enrollment_number="2024CS1042", department_id=department.id,
+            semester_id=semester.id, admission_year=2024)
+        db.add(student)
+        db.flush()
+
+    student_two_user = db.query(User).filter_by(user_id="2024EE1001").first()
+    if student_two_user is None:
+        student_two_user = User(user_id="2024EE1001", name="Asha Verma", email="asha@university.edu",
+            password_hash=hash_password("student456"), role="student")
+        db.add(student_two_user)
+        db.flush()
+    student_two = db.query(Student).filter_by(user_id=student_two_user.id).first()
+    if student_two is None:
+        student_two = Student(user_id=student_two_user.id, enrollment_number="2024ECE1001", department_id=engineering.id,
+            semester_id=semester.id, admission_year=2024)
+        db.add(student_two)
+        db.flush()
 
     courses = [
-        Course(code="CS401", name="Operating Systems", faculty_id=faculty.id, department="Computer Science", semester=4),
-        Course(code="CS402", name="Database Management", faculty_id=faculty.id, department="Computer Science", semester=4),
-        Course(code="CS403", name="Software Engineering", faculty_id=faculty.id, department="Computer Science", semester=4),
-        Course(code="CS404", name="Computer Networks", faculty_id=faculty.id, department="Computer Science", semester=4),
-        Course(code="CS405", name="Web Technologies", faculty_id=faculty.id, department="Computer Science", semester=4),
-        Course(code="CS406", name="Data Structures", faculty_id=faculty.id, department="Computer Science", semester=4),
+        ("CS401", "Operating Systems"),
+        ("CS402", "Database Management"),
+        ("CS403", "Software Engineering"),
     ]
-    db.add_all(courses); db.flush()
-    db.add_all([Enrollment(student_id=student.id, course_id=c.id) for c in courses])
-    db.add_all([
-        Assignment(title="Operating Systems Assignment", subject="Operating Systems", course_id=courses[0].id, due=date(2026,9,5)),
-        Assignment(title="University Management System", subject="Software Engineering", course_id=courses[2].id, due=date(2026,9,7)),
-        Assignment(title="Database Normalization", subject="Database Management", course_id=courses[1].id, due=date(2026,9,10), status="Submitted"),
-    ])
-    db.add_all([
-        Notice(title="Mid-Semester Examination Schedule", body="The mid-semester examination schedule has been published.", date=date(2026,9,2)),
-        Notice(title="Project Submission Deadline", body="All students must submit their Software Engineering project before the deadline.", date=date(2026,9,1)),
-        Notice(title="Library Timing Updated", body="The university library will remain open until 8:00 PM.", date=date(2026,8,30)),
-    ])
+    offerings = []
+    for code, name in courses:
+        course = db.query(Course).filter_by(code=code).first()
+        if course is None:
+            course = Course(code=code, name=name, department_id=department.id, credits=3)
+            db.add(course)
+            db.flush()
+        offering = db.query(CourseOffering).filter_by(course_id=course.id, semester_id=semester.id, section="A").first()
+        if offering is None:
+            offering = CourseOffering(course_id=course.id, faculty_id=faculty.id, semester_id=semester.id, section="A")
+            db.add(offering)
+            db.flush()
+        offerings.append(offering)
+        if db.query(Enrollment).filter_by(student_id=student.id, course_offering_id=offering.id).first() is None:
+            db.add(Enrollment(student_id=student.id, course_offering_id=offering.id))
+    electronics = db.query(Course).filter_by(code="ECE401").first()
+    if electronics is None:
+        electronics = Course(code="ECE401", name="Digital Systems", department_id=engineering.id, credits=4)
+        db.add(electronics)
+        db.flush()
+    electronics_offering = db.query(CourseOffering).filter_by(course_id=electronics.id, semester_id=semester.id, section="A").first()
+    if electronics_offering is None:
+        electronics_offering = CourseOffering(course_id=electronics.id, faculty_id=faculty_two.id,
+            semester_id=semester.id, section="A", capacity=60)
+        db.add(electronics_offering)
+        db.flush()
+    if not db.query(Enrollment).filter_by(student_id=student_two.id, course_offering_id=electronics_offering.id).first():
+        db.add(Enrollment(student_id=student_two.id, course_offering_id=electronics_offering.id))
+
+    if db.query(Assignment).filter_by(course_offering_id=offerings[0].id, title="Operating Systems Assignment").first() is None:
+        db.add(Assignment(course_offering_id=offerings[0].id, faculty_id=faculty.id,
+            title="Operating Systems Assignment", description="Development sample assignment",
+            due_date=datetime.now(timezone.utc) + timedelta(days=14), max_marks=100, status="published"))
+    if db.query(Notice).filter_by(title="Welcome to the development portal").first() is None:
+        db.add(Notice(title="Welcome to the development portal", content="This notice is development sample data.",
+            author_id=admin.id, audience="all", is_published=True, published_at=datetime.now(timezone.utc)))
+    exam = db.query(Exam).filter_by(name="Fall Midterm", semester_id=semester.id).first()
+    if exam is None:
+        exam = Exam(name="Fall Midterm", exam_type="midterm", semester_id=semester.id,
+            start_date=date(2026, 10, 1), end_date=date(2026, 10, 31), status="scheduled")
+        db.add(exam)
+        db.flush()
+    if not db.query(ExamSchedule).filter_by(exam_id=exam.id, course_offering_id=offerings[0].id).first():
+        db.add(ExamSchedule(exam_id=exam.id, course_offering_id=offerings[0].id,
+            semester_id=semester.id, exam_date=date(2026, 10, 12), start_time=time(10), end_time=time(12), room="Hall 1"))
+    result = db.query(Result).filter_by(student_id=student.id, course_offering_id=offerings[0].id,
+        assessment_name="Development Midterm").first()
+    if result is None:
+        result = Result(student_id=student.id, course_offering_id=offerings[0].id,
+            assessment_name="Development Midterm", marks=82, max_marks=100, grade="A", grade_point=9,
+            status="published", published_at=datetime.now(timezone.utc), published_by=admin.id)
+        db.add(result)
+    if not db.query(Notification).filter_by(user_id=student.user_id, title="Welcome to the portal").first():
+        db.add(Notification(user_id=student.user_id, title="Welcome to the portal",
+            message="Your development student account is ready.", notification_type="general"))
+    if not db.query(Notification).filter_by(user_id=student_two.user_id, title="Welcome to the portal").first():
+        db.add(Notification(user_id=student_two.user_id, title="Welcome to the portal",
+            message="Your development student account is ready.", notification_type="general"))
     db.commit()
+
+
+def main() -> None:
+    if settings.environment != "development":
+        raise SystemExit("Refusing to seed outside ENVIRONMENT=development")
+    with SessionLocal() as db:
+        seed(db)
+    print("Development sample data is ready.")
+
+
+if __name__ == "__main__":
+    main()

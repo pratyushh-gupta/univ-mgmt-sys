@@ -7,6 +7,16 @@ from ..models import User
 from .config import settings
 
 bearer = HTTPBearer(auto_error=False)
+def optional_user(creds: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)):
+    if creds is None:
+        return None
+    try:
+        payload = jwt.decode(creds.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        uid = int(payload["sub"])
+    except (JWTError, ValueError, KeyError, TypeError):
+        return None
+    return db.get(User, uid)
+
 def current_user(creds: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)):
     if creds is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required", headers={"WWW-Authenticate": "Bearer"})
@@ -16,7 +26,7 @@ def current_user(creds: HTTPAuthorizationCredentials | None = Depends(bearer), d
     except (JWTError, ValueError, KeyError, TypeError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
     user = db.get(User, uid)
-    if user is None:
+    if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
     return user
 def require_roles(*roles):

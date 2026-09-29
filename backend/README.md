@@ -1,8 +1,8 @@
 # FastAPI Backend
 
-FastAPI + SQLAlchemy 2.x backend. Local development uses SQLite; PostgreSQL support can be configured later via `DATABASE_URL` without changing application code.
+FastAPI with SQLAlchemy 2.x, PostgreSQL (`postgresql+psycopg2`) and Alembic. SQLite URLs remain supported for isolated development/test databases. The backend loads `backend/.env` from its own directory, regardless of the shell's working directory.
 
-## Setup (Windows PowerShell)
+## Setup and run
 
 ```powershell
 cd backend
@@ -10,36 +10,46 @@ py -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
+# Fill in the local PostgreSQL URL and a private JWT_SECRET in .env.
+alembic upgrade head
 python run.py
 ```
 
-API docs: http://localhost:8000/docs. The default `DATABASE_URL=sqlite:///./university.db` creates a local SQLite database from the backend working directory. Configure `JWT_SECRET`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `ENVIRONMENT`, and `CORS_ORIGINS` in the backend `.env`; it is loaded from the backend directory even when started elsewhere. Production requires an explicit, non-placeholder JWT secret of at least 32 characters. Tables initialize on startup, but demo users and sample data are seeded only in development. Never commit `.env`.
+Do not print or commit `.env`. `.env.example` contains only placeholders. Production must supply an explicit JWT secret; placeholder and development secrets are rejected. Production never seeds sample accounts.
 
-## Seeded development accounts
+## Migrations
 
-| Role | User ID | Password |
-|---|---|---|
-| Admin | `admin` | `admin123` |
-| Faculty | `F001` | `faculty123` |
-| Student | `2024CS1042` | `student123` |
+Run Alembic commands from this directory so the project's configuration and environment are loaded:
 
-Change development passwords for any non-local environment.
+```powershell
+alembic upgrade head
+alembic current
+alembic history
+alembic downgrade -1
+```
 
-New student and faculty passwords must contain at least 8 characters. Course creation rejects unknown faculty IDs; attendance and results accept only students enrolled in the selected course. Production deployments must provision real user accounts through a controlled administrative workflow; demo accounts are never seeded there.
+When models change, generate a candidate with `alembic revision --autogenerate -m "description"`, review it, and then apply it. `Base.metadata.create_all()` is not used at application startup.
 
-## API endpoints
+## Development data
 
-- `GET /health`
-- `POST /auth/login`, `GET /auth/me`
-- `GET/POST /students`, `DELETE /students/{student_id}` (Admin)
-- `GET/POST /faculty`, `DELETE /faculty/{faculty_id}` (Admin)
-- `GET/POST /courses`, `DELETE /courses/{code}` (writes require Admin)
-- `GET /student/courses`, `/student/attendance`, `/student/results`, `/student/assignments` (Student)
-- `GET /notices`
-- `GET /faculty/courses`, `/faculty/roster/{course_code}` (Faculty)
-- `POST /attendance`, `/results` (Faculty)
-- `GET /admin/overview` (Admin)
+With `ENVIRONMENT=development` and the schema migrated, startup seeds a small idempotent local dataset. To run the seeder explicitly, use `python -m app.seed`. It refuses to run outside development. These records and their sample passwords are for local development only; do not reuse them outside an isolated development database.
 
-Authentication failures return 401 and role failures return 403. Validation uses FastAPI's 422 responses; missing resources return 404; duplicates return 409. Unexpected server errors return a generic 500 while details remain in server logs.
+## Domain entities
 
-The frontend calls the existing endpoints through `frontend/src/api`. Timetable, assignment submission, and related expanded workflows are not yet supported by this API. PostgreSQL deployment, Alembic, and the full database redesign are Phase 2 work.
+Authentication `User` records are separated from one-to-one `Student` and `Faculty` profiles. Academic structure uses `Department`, `AcademicYear`, and `Semester`; admissions use `AdmissionApplication`; teaching is represented by `Course` and `CourseOffering`; `Enrollment` links students to offerings and preserves dropped history. `ClassSchedule` provides timetable foundations. Attendance uses session and record tables. Assignments have submissions and grading; exams have schedules; results store assessment marks and publication state. Notices, per-user notifications, and audit events have dedicated tables.
+
+## API surface
+
+- `/auth`, `/admin`
+- `/departments`, `/academic-years`, `/semesters`
+- `/students`, `/faculty`, `/courses`, `/course-offerings`, `/enrollments`
+- `/attendance`, `/assignments`, `/submissions`, `/exams`, `/exam-schedules`, `/results`
+- `/notices`, `/notifications`
+
+Phase 3 also provides `/admin/admissions` for application review and student creation, `/student/course-offerings` and `/student/enrollments` for registration and drops, `/student/dashboard`, `/student/history`, `/student/exams`, and `/timetable`. Admin lists support search and pagination. Course offering enrollment enforces active student/course/offer status, department and semester compatibility, and capacity.
+
+Legacy Phase 1 student/faculty/course and attendance/result paths remain available where their meanings can be mapped to the new relations. Student-visible results include only published records. Timetable entries are a schedule foundation; automatic timetable generation and direct binary file storage are not implemented. Submission file references store metadata/URLs only. Assignment grading and result entry remain faculty workflows; no unsupported grading or attendance summaries are synthesized.
+
+## Tests
+
+Install test dependencies with `pip install -r requirements-dev.txt`, then run `python -m pytest -q` from `backend/`. The Phase 3 integration test requires PostgreSQL configured through `DATABASE_URL`; it skips on SQLite. Use a disposable development/test database because it exercises migrations and API workflows. The latest schema revision is `f54c14450324` (parent `80d2893ee48c`). `npm run lint` and `npm run build` are run from `frontend/`.
