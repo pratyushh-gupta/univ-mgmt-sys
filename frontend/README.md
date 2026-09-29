@@ -1,16 +1,7 @@
-# React + Vite
+# Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React and Vite frontend. From this directory, run `npm ci`, optionally copy `.env.example` to `.env`, and then run `npm run dev`. The default URL is http://localhost:5173.
 
-Currently, two official plugins are available:
+Set `VITE_API_URL` to the FastAPI base URL (default `http://localhost:8000`). The shared client attaches the stored JWT and normalizes HTTP/network errors. Authentication is handled by FastAPI; use seeded development accounts from `../backend/README.md`.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Pages with backend endpoints display API data. Timetables and features without backend support are labeled as unavailable for this phase. `src/data/mockData.js` remains as an unused legacy sample-data file and is not imported by application pages.
